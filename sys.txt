@@ -1,0 +1,859 @@
+//1
+#include <iostream>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <cstdlib>
+using namespace std;
+
+void simulate_cp() {
+    char source[100], destination[100];
+    cout << "Enter source file: ";
+    cin >> source;
+    cout << "Enter destination file: ";
+    cin >> destination;
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        cout << "Child (cp) PID: " << getpid() << endl;
+        execl("/bin/cp", "cp", source, destination, NULL);
+        perror("execl failed");
+        exit(1);
+    } else {
+        wait(NULL);
+        cout << "Parent (cp): Copy operation complete\n";
+    }
+}
+
+
+
+void simulate_grep() {
+    char word[100], file[100];
+    cout << "Enter word to search: ";
+    cin >> word;
+    cout << "Enter file to search in: ";
+    cin >> file;
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        cout << "Child (grep) PID: " << getpid() << endl;
+
+        // FIXED: use execlp so it finds grep in PATH
+        execlp("grep", "grep", word, file, NULL);
+
+        // Only runs if exec fails
+        perror("execlp failed");
+        exit(1);
+    } else {
+        wait(NULL);
+        cout << "Parent (grep): Grep operation complete\n";
+    }
+}
+
+int main() {
+    int choice;
+    do {
+        cout << "\nLinux Command Simulation Menu:\n";
+        cout << "1. Simulate cp command\n";
+        cout << "2. Simulate grep command\n";
+        cout << "3. Exit\n";
+        cout << "Enter your choice: ";
+        cin >> choice;
+
+        switch (choice) {
+            case 1: simulate_cp(); break;
+            case 2: simulate_grep(); break;
+            case 3: cout << "Exiting...\n"; exit(0);
+            default: cout << "Invalid choice!\n";
+        }
+    } while (choice != 3);
+
+    return 0;
+}
+
+
+
+
+//2
+#include <iostream>
+#include <vector>
+#include <algorithm>
+#include <queue>
+using namespace std;
+
+struct Process {
+    int pid;
+    int bt;    // Burst Time
+    int at;    // Arrival Time
+    int priority;
+    int wt;    // Waiting Time
+    int tat;   // Turnaround Time
+};
+
+// Function to display process details
+void display(vector<Process> &p) {
+    float totalWT = 0, totalTAT = 0;
+    cout << "\nPID\tAT\tBT\tWT\tTAT\n";
+    for (auto &pr : p) {
+        cout << pr.pid << "\t" << pr.at << "\t" << pr.bt << "\t" << pr.wt << "\t" << pr.tat << endl;
+        totalWT += pr.wt;
+        totalTAT += pr.tat;
+    }
+    cout << "Average Waiting Time: " << totalWT / p.size() << endl;
+    cout << "Average Turnaround Time: " << totalTAT / p.size() << endl;
+}
+
+// FCFS Scheduling
+void FCFS(vector<Process> p) {
+    sort(p.begin(), p.end(), [](Process a, Process b) {
+        return a.at < b.at;
+    });
+
+    int time = 0;
+    for (int i = 0; i < p.size(); i++) {
+        if (time < p[i].at)
+            time = p[i].at;
+        p[i].wt = time - p[i].at;
+        time += p[i].bt;
+        p[i].tat = p[i].wt + p[i].bt;
+    }
+    display(p);
+}
+
+// SJF Scheduling (Non-Preemptive)
+void SJF(vector<Process> p) {
+    int n = p.size();
+    int complete = 0, time = 0;
+    vector<bool> done(n, false);
+
+    while (complete < n) {
+        int idx = -1;
+        int minBT = 1e9;
+        for (int i = 0; i < n; i++) {
+            if (!done[i] && p[i].at <= time && p[i].bt < minBT) {
+                minBT = p[i].bt;
+                idx = i;
+            }
+        }
+        if (idx != -1) {
+            p[idx].wt = time - p[idx].at;
+            time += p[idx].bt;
+            p[idx].tat = p[idx].wt + p[idx].bt;
+            done[idx] = true;
+            complete++;
+        } else {
+            time++;
+        }
+    }
+    display(p);
+}
+
+// Round Robin Scheduling
+void RoundRobin(vector<Process> p, int quantum) {
+    int n = p.size();
+    vector<int> remBT(n), wt(n, 0), tat(n, 0);
+    for (int i = 0; i < n; i++) remBT[i] = p[i].bt;
+
+    int time = 0;
+    bool done;
+    do {
+        done = true;
+        for (int i = 0; i < n; i++) {
+            if (remBT[i] > 0) {
+                done = false;
+                if (remBT[i] > quantum) {
+                    time += quantum;
+                    remBT[i] -= quantum;
+                } else {
+                    time += remBT[i];
+                    wt[i] = time - p[i].bt - p[i].at;
+                    remBT[i] = 0;
+                }
+            }
+        }
+    } while (!done);
+
+    for (int i = 0; i < n; i++) {
+        p[i].wt = wt[i];
+        p[i].tat = p[i].wt + p[i].bt;
+    }
+    display(p);
+}
+
+// Priority Scheduling (Non-Preemptive)
+void PriorityScheduling(vector<Process> p) {
+    sort(p.begin(), p.end(), [](Process a, Process b) {
+        return (a.priority == b.priority) ? a.at < b.at : a.priority < b.priority;
+    });
+
+    int time = 0;
+    for (int i = 0; i < p.size(); i++) {
+        if (time < p[i].at)
+            time = p[i].at;
+        p[i].wt = time - p[i].at;
+        time += p[i].bt;
+        p[i].tat = p[i].wt + p[i].bt;
+    }
+    display(p);
+}
+
+// Input process data
+vector<Process> inputProcesses(bool withPriority = false) {
+    int n;
+    cout << "Enter number of processes: ";
+    cin >> n;
+    vector<Process> p(n);
+    for (int i = 0; i < n; i++) {
+        cout << "Process " << i + 1 << ":\n";
+        p[i].pid = i + 1;
+        cout << "Arrival Time: ";
+        cin >> p[i].at;
+        cout << "Burst Time: ";
+        cin >> p[i].bt;
+        if (withPriority) {
+            cout << "Priority (Lower value = Higher priority): ";
+            cin >> p[i].priority;
+        }
+    }
+    return p;
+}
+
+// Main menu
+int main() {
+    int choice, quantum;
+    while (true) {
+        cout << "\nCPU Scheduling Algorithms:\n";
+        cout << "1. FCFS\n2. SJF (Non-Preemptive)\n3. Round Robin\n4. Priority Scheduling\n5. Exit\n";
+        cout << "Enter your choice: ";
+        cin >> choice;
+
+        if (choice == 5) break;
+
+        vector<Process> processes;
+        switch (choice) {
+            case 1:
+                processes = inputProcesses();
+                FCFS(processes);
+                break;
+            case 2:
+                processes = inputProcesses();
+                SJF(processes);
+                break;
+            case 3:
+                processes = inputProcesses();
+                cout << "Enter Time Quantum: ";
+                cin >> quantum;
+                RoundRobin(processes, quantum);
+                break;
+            case 4:
+                processes = inputProcesses(true);
+                PriorityScheduling(processes);
+                break;
+            default:
+                cout << "Invalid choice.\n";
+        }
+    }
+    return 0;
+}
+
+
+
+
+//3
+#include <iostream>
+#include <unistd.h>
+#include <cstring>
+using namespace std;
+
+int main() {
+    int pipe1[2]; // Parent to Child
+    int pipe2[2]; // Child to Parent
+    char buffer[100];
+
+    pipe(pipe1);
+    pipe(pipe2);
+
+    pid_t pid = fork();
+
+    if (pid == 0) {
+        // Child process
+        close(pipe1[1]); // Close write end of pipe1
+        close(pipe2[0]); // Close read end of pipe2
+
+        // Redirect standard input and output
+        dup2(pipe1[0], STDIN_FILENO);  // Read from pipe1 (Parent)
+        dup2(pipe2[1], STDOUT_FILENO); // Write to pipe2 (Parent)
+
+        close(pipe1[0]);
+        close(pipe2[1]);
+
+        // Read message from parent
+        string msg;
+        getline(cin, msg); // This will now read from pipe1
+        cout << "Child received: msg " << msg << endl; // This will write to pipe2
+        fflush(stdout);  // Ensure the message is written to the pipe
+    } else {
+        // Parent process
+        close(pipe1[0]); // Close read end of pipe1
+        close(pipe2[1]); // Close write end of pipe2
+
+        // Redirect standard input and output
+        dup2(pipe2[0], STDIN_FILENO);  // Read from pipe2 (Child)
+        dup2(pipe1[1], STDOUT_FILENO); // Write to pipe1 (Child)
+
+        close(pipe2[0]);
+        close(pipe1[1]);
+
+        // Send message to child
+        cout << "Hello Child, this is Parent!" << endl; // This will go to pipe1
+        cout.flush(); // Ensure the message is written to the pipe
+
+        // Read response from child
+        string response;
+        getline(cin, response); // This will read from pipe2
+        cerr << "Parent received: " << response << endl; // Display the response from child
+    }
+
+    return 0;
+}
+
+
+
+//4
+#include <iostream>
+#include <pthread.h>
+#include <unistd.h>
+using namespace std;
+
+int data = 0, readers = 0;
+pthread_mutex_t mutexLock;
+pthread_mutex_t writeLock;
+
+void* readerSync(void*) {
+    pthread_mutex_lock(&mutexLock);
+    readers++;
+    if (readers == 1)
+        pthread_mutex_lock(&writeLock); // First reader blocks writer
+    pthread_mutex_unlock(&mutexLock);
+
+    cout << "[Reader] Reading data: " << data << endl;
+    sleep(1);
+
+    pthread_mutex_lock(&mutexLock);
+    readers--;
+    if (readers == 0)
+        pthread_mutex_unlock(&writeLock); // Last reader allows writer
+    pthread_mutex_unlock(&mutexLock);
+    return NULL;
+}
+
+void* writerSync(void*) {
+    pthread_mutex_lock(&writeLock);
+    data++;
+    cout << "[Writer] Writing data: " << data << endl;
+    sleep(1);
+    pthread_mutex_unlock(&writeLock);
+    return NULL;
+}
+
+void* readerNoSync(void*) {
+    cout << "[Reader] Reading data (no sync): " << data << endl;
+    sleep(1);
+    return NULL;
+}
+
+void* writerNoSync(void*) {
+    data++;
+    cout << "[Writer] Writing data (no sync): " << data << endl;
+    sleep(1);
+    return NULL;
+}
+
+int main() {
+    pthread_t r1, r2, w1, w2;
+    int choice;
+
+    pthread_mutex_init(&mutexLock, NULL);
+    pthread_mutex_init(&writeLock, NULL);
+
+    cout << "1. Without Synchronization\n2. With Synchronization\nEnter choice: ";
+    cin >> choice;
+
+    if (choice == 1) {
+        pthread_create(&r1, NULL, readerNoSync, NULL);
+        pthread_create(&w1, NULL, writerNoSync, NULL);
+        pthread_create(&r2, NULL, readerNoSync, NULL);
+        pthread_create(&w2, NULL, writerNoSync, NULL);
+    } else {
+        pthread_create(&r1, NULL, readerSync, NULL);
+        pthread_create(&w1, NULL, writerSync, NULL);
+        pthread_create(&r2, NULL, readerSync, NULL);
+        pthread_create(&w2, NULL, writerSync, NULL);
+    }
+
+    pthread_join(r1, NULL);
+    pthread_join(w1, NULL);
+    pthread_join(r2, NULL);
+    pthread_join(w2, NULL);
+
+    pthread_mutex_destroy(&mutexLock);
+    pthread_mutex_destroy(&writeLock);
+
+    return 0;
+}
+
+
+
+
+//5
+#include <iostream>
+using namespace std;
+
+int main() {
+    int n, m;
+    cout << "Enter number of processes and resources: ";
+    cin >> n >> m;
+
+    int alloc[n][m], max[n][m], avail[m], need[n][m];
+
+    cout << "Enter Allocation Matrix:\n";
+    for (int i = 0; i < n; i++)
+        for (int j = 0; j < m; j++)
+            cin >> alloc[i][j];
+
+    cout << "Enter Maximum Matrix:\n";
+    for (int i = 0; i < n; i++)
+        for (int j = 0; j < m; j++)
+            cin >> max[i][j];
+
+    cout << "Enter Available Resources:\n";
+    for (int j = 0; j < m; j++)
+        cin >> avail[j];
+
+    // Calculate need matrix
+    for (int i = 0; i < n; i++)
+        for (int j = 0; j < m; j++)
+            need[i][j] = max[i][j] - alloc[i][j];
+
+    int work[m], safe[n], count = 0;
+    bool finish[n] = {false};
+
+    for (int i = 0; i < m; i++)
+        work[i] = avail[i];
+
+    while (count < n) {
+        bool found = false;
+        for (int i = 0; i < n; i++) {
+            if (!finish[i]) {
+                int j;
+                for (j = 0; j < m; j++)
+                    if (need[i][j] > work[j]) break;
+
+                if (j == m) {
+                    for (int k = 0; k < m; k++)
+                        work[k] += alloc[i][k];
+
+                    safe[count++] = i;
+                    finish[i] = true;
+                    found = true;
+                }
+            }
+        }
+        if (!found) {
+            cout << "System is not in a safe state.\n";
+            return 0;
+        }
+    }
+
+    cout << "System is in a safe state.\nSafe Sequence: ";
+    for (int i = 0; i < n; i++)
+        cout << "P" << safe[i] << (i == n - 1 ? "\n" : " -> ");
+
+    return 0;
+}
+
+
+
+//6
+#include <iostream>
+#include <vector>
+#include <climits>
+using namespace std;
+
+void firstFit(vector<int> blockSize, vector<int>& processSize, int m, int n) {
+    vector<int> allocation(n, -1);
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < m; j++) {
+            if (blockSize[j] >= processSize[i]) {
+                allocation[i] = j;
+                blockSize[j] -= processSize[i];
+                break;
+            }
+        }
+    }
+    cout << "\nFirst Fit Allocation:\n";
+    for (int i = 0; i < n; i++)
+        if (allocation[i] != -1)
+            cout << "Process " << i + 1 << " is allocated to Block " << allocation[i] + 1 << endl;
+        else
+            cout << "Process " << i + 1 << " is not allocated\n";
+}
+
+void bestFit(vector<int> blockSize, vector<int>& processSize, int m, int n) {
+    vector<int> allocation(n, -1);
+    for (int i = 0; i < n; i++) {
+        int bestIdx = -1;
+        for (int j = 0; j < m; j++) {
+            if (blockSize[j] >= processSize[i]) {
+                if (bestIdx == -1 || blockSize[bestIdx] > blockSize[j])
+                    bestIdx = j;
+            }
+        }
+        if (bestIdx != -1) {
+            allocation[i] = bestIdx;
+            blockSize[bestIdx] -= processSize[i];
+        }
+    }
+    cout << "\nBest Fit Allocation:\n";
+    for (int i = 0; i < n; i++)
+        if (allocation[i] != -1)
+            cout << "Process " << i + 1 << " is allocated to Block " << allocation[i] + 1 << endl;
+        else
+            cout << "Process " << i + 1 << " is not allocated\n";
+}
+
+void nextFit(vector<int> blockSize, vector<int>& processSize, int m, int n) {
+    vector<int> allocation(n, -1);
+    int j = 0;
+    for (int i = 0; i < n; i++) {
+        int count = 0;
+        while (count < m) {
+            if (blockSize[j] >= processSize[i]) {
+                allocation[i] = j;
+                blockSize[j] -= processSize[i];
+                break;
+            }
+            j = (j + 1) % m;
+            count++;
+        }
+    }
+    cout << "\nNext Fit Allocation:\n";
+    for (int i = 0; i < n; i++)
+        if (allocation[i] != -1)
+            cout << "Process " << i + 1 << " is allocated to Block " << allocation[i] + 1 << endl;
+        else
+            cout << "Process " << i + 1 << " is not allocated\n";
+}
+
+void worstFit(vector<int> blockSize, vector<int>& processSize, int m, int n) {
+    vector<int> allocation(n, -1);
+    for (int i = 0; i < n; i++) {
+        int worstIdx = -1;
+        for (int j = 0; j < m; j++) {
+            if (blockSize[j] >= processSize[i]) {
+                if (worstIdx == -1 || blockSize[worstIdx] < blockSize[j])
+                    worstIdx = j;
+            }
+        }
+        if (worstIdx != -1) {
+            allocation[i] = worstIdx;
+            blockSize[worstIdx] -= processSize[i];
+        }
+    }
+    cout << "\nWorst Fit Allocation:\n";
+    for (int i = 0; i < n; i++)
+        if (allocation[i] != -1)
+            cout << "Process " << i + 1 << " is allocated to Block " << allocation[i] + 1 << endl;
+        else
+            cout << "Process " << i + 1 << " is not allocated\n";
+}
+
+int main() {
+    int m, n, choice;
+    
+    cout << "Enter number of memory blocks and processes: ";
+    cin >> m >> n;
+
+    vector<int> originalBlockSize(m), processSize(n);
+
+    cout << "Enter memory block sizes:\n";
+    for (int i = 0; i < m; i++)
+        cin >> originalBlockSize[i];
+
+    cout << "Enter process sizes:\n";
+    for (int i = 0; i < n; i++)
+        cin >> processSize[i];
+
+    do {
+        cout << "\nMenu:\n";
+        cout << "1. First Fit Allocation\n";
+        cout << "2. Best Fit Allocation\n";
+        cout << "3. Next Fit Allocation\n";
+        cout << "4. Worst Fit Allocation\n";
+        cout << "5. Exit\n";
+        cout << "Enter your choice: ";
+        cin >> choice;
+
+        // Always use a fresh copy of the original block sizes
+        vector<int> blockSize = originalBlockSize;
+
+        switch(choice) {
+            case 1:
+                firstFit(blockSize, processSize, m, n);
+                break;
+            case 2:
+                bestFit(blockSize, processSize, m, n);
+                break;
+            case 3:
+                nextFit(blockSize, processSize, m, n);
+                break;
+            case 4:
+                worstFit(blockSize, processSize, m, n);
+                break;
+            case 5:
+                cout << "Exiting...\n";
+                break;
+            default:
+                cout << "Invalid choice! Please try again.\n";
+        }
+
+    } while(choice != 5);
+
+    return 0;
+}
+
+
+
+//7
+#include <iostream>
+#include <vector>
+#include <unordered_map>
+#include <algorithm>
+using namespace std;
+
+void printFrames(const vector<int>& frames) {
+    for (int f : frames) cout << f << " ";
+    cout << endl;
+}
+
+void fcfs(const vector<int>& pages, int capacity) {
+    vector<int> frames;
+    int faults = 0;
+    for (int p : pages) {
+        if (find(frames.begin(), frames.end(), p) == frames.end()) {
+            if (frames.size() == capacity) frames.erase(frames.begin());
+            frames.push_back(p);
+            faults++;
+        }
+    }
+    cout << "FCFS Page Faults: " << faults << endl;
+}
+
+void lru(const vector<int>& pages, int capacity) {
+    vector<int> frames;
+    unordered_map<int, int> lastUsed;
+    int faults = 0;
+    for (int i = 0; i < pages.size(); i++) {
+        int p = pages[i];
+        if (find(frames.begin(), frames.end(), p) == frames.end()) {
+            if (frames.size() == capacity) {
+                int lruIndex = 0, minTime = i;
+                for (int j = 0; j < frames.size(); j++) {
+                    if (lastUsed[frames[j]] < minTime) {
+                        minTime = lastUsed[frames[j]];
+                        lruIndex = j;
+                    }
+                }
+                frames[lruIndex] = p;
+            } else {
+                frames.push_back(p);
+            }
+            faults++;
+        }
+        lastUsed[p] = i;
+    }
+    cout << "LRU Page Faults: " << faults << endl;
+}
+
+void optimal(const vector<int>& pages, int capacity) {
+    vector<int> frames;
+    int faults = 0;
+    for (int i = 0; i < pages.size(); i++) {
+        int p = pages[i];
+        if (find(frames.begin(), frames.end(), p) == frames.end()) {
+            if (frames.size() == capacity) {
+                int farthest = i + 1, idx = -1;
+                for (int j = 0; j < frames.size(); j++) {
+                    int k;
+                    for (k = i + 1; k < pages.size(); k++)
+                        if (pages[k] == frames[j]) break;
+                    if (k > farthest) {
+                        farthest = k;
+                        idx = j;
+                    }
+                }
+                if (idx == -1) idx = 0;
+                frames[idx] = p;
+            } else {
+                frames.push_back(p);
+            }
+            faults++;
+        }
+    }
+    cout << "Optimal Page Faults: " << faults << endl;
+}
+
+int main() {
+    int n, cap, choice;
+    cout << "Enter number of pages: ";
+    cin >> n;
+
+    vector<int> pages(n);
+    cout << "Enter page reference string:\n";
+    for (int i = 0; i < n; i++) cin >> pages[i];
+
+    cout << "Enter number of frames: ";
+    cin >> cap;
+
+    do {
+        cout << "\nMenu:\n1. FCFS\n2. LRU\n3. Optimal\n4. Exit\nEnter choice: ";
+        cin >> choice;
+
+        switch (choice) {
+            case 1: fcfs(pages, cap); break;
+            case 2: lru(pages, cap); break;
+            case 3: optimal(pages, cap); break;
+            case 4: cout << "Exiting...\n"; break;
+            default: cout << "Invalid choice!\n";
+        }
+    } while (choice != 4);
+
+    return 0;
+}
+
+
+
+
+
+
+//8
+#include <iostream>
+#include <vector>
+#include <algorithm>
+#include <cmath>
+using namespace std;
+
+void fifo(vector<int> req, int head) {
+    int seek = 0;
+    for (int r : req) {
+        seek += abs(head - r);
+        head = r;
+    }
+    cout << "Total Seek Time (FIFO): " << seek << endl;
+}
+
+void sstf(vector<int> req, int head) {
+    int seek = 0;
+    vector<bool> visited(req.size(), false);
+    for (int i = 0; i < req.size(); i++) {
+        int minDist = 1e9, index = -1;
+        for (int j = 0; j < req.size(); j++) {
+            if (!visited[j] && abs(head - req[j]) < minDist) {
+                minDist = abs(head - req[j]);
+                index = j;
+            }
+        }
+        seek += minDist;
+        head = req[index];
+        visited[index] = true;
+    }
+    cout << "Total Seek Time (SSTF): " << seek << endl;
+}
+
+void scan(vector<int> req, int head, int diskSize) {
+    int seek = 0;
+    vector<int> left, right;
+    for (int r : req) {
+        if (r < head) left.push_back(r);
+        else right.push_back(r);
+    }
+    sort(left.begin(), left.end(), greater<int>());
+    sort(right.begin(), right.end());
+
+    for (int r : right) {
+        seek += abs(head - r);
+        head = r;
+    }
+    if (!left.empty()) {
+        seek += abs(head - (diskSize - 1));
+        head = diskSize - 1;
+        for (int r : left) {
+            seek += abs(head - r);
+            head = r;
+        }
+    }
+    cout << "Total Seek Time (SCAN): " << seek << endl;
+}
+
+void cscan(vector<int> req, int head, int diskSize) {
+    int seek = 0;
+    vector<int> left, right;
+    for (int r : req) {
+        if (r < head) left.push_back(r);
+        else right.push_back(r);
+    }
+    sort(left.begin(), left.end());
+    sort(right.begin(), right.end());
+
+    for (int r : right) {
+        seek += abs(head - r);
+        head = r;
+    }
+    if (!left.empty()) {
+        seek += abs(head - (diskSize - 1)); // go to end
+        seek += diskSize - 1;               // wrap to beginning
+        head = 0;
+        for (int r : left) {
+            seek += abs(head - r);
+            head = r;
+        }
+    }
+    cout << "Total Seek Time (C-SCAN): " << seek << endl;
+}
+
+int main() {
+    int n, head, diskSize, choice;
+    vector<int> requests;
+
+    cout << "Enter number of disk requests: ";
+    cin >> n;
+    requests.resize(n);
+
+    cout << "Enter disk request queue:\n";
+    for (int i = 0; i < n; i++) cin >> requests[i];
+
+    cout << "Enter initial head position: ";
+    cin >> head;
+
+    cout << "Enter disk size (e.g., 200): ";
+    cin >> diskSize;
+
+    do {
+        cout << "\nMenu:\n";
+        cout << "1. FIFO\n2. SSTF\n3. SCAN\n4. C-SCAN\n5. Exit\n";
+        cout << "Enter your choice: ";
+        cin >> choice;
+
+        switch (choice) {
+            case 1: fifo(requests, head); break;
+            case 2: sstf(requests, head); break;
+            case 3: scan(requests, head, diskSize); break;
+            case 4: cscan(requests, head, diskSize); break;
+            case 5: cout << "Exiting...\n"; break;
+            default: cout << "Invalid choice!\n";
+        }
+    } while (choice != 5);
+
+    return 0;
+}
+
+
