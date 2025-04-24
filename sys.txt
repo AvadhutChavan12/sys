@@ -926,3 +926,53 @@ int main() {
 }
 
 
+
+
+
+#include <iostream>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <cstdlib>
+using namespace std;
+
+void simulate_ls() {
+    char dir[100];
+    cout << "Enter directory (or . for current): ";
+    cin >> dir;
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        cout << "Child (ls) PID: " << getpid() << endl;
+
+        // execlp will look for 'ls' in the system PATH
+        execlp("ls", "ls", "-l", dir, NULL); // Using "-l" for long listing
+
+        // This only executes if execlp fails
+        perror("execlp failed");
+        exit(1);
+    } else {
+        wait(NULL);
+        cout << "Parent (ls): ls command completed\n";
+    }
+}
+
+int main() {
+    int choice;
+    do {
+        cout << "\nLinux Command Simulation Menu:\n";
+        cout << "1. Simulate ls command\n";
+        cout << "2. Exit\n";
+        cout << "Enter your choice: ";
+        cin >> choice;
+
+        switch (choice) {
+            case 1: simulate_ls(); break;
+            case 2: cout << "Exiting...\n"; exit(0);
+            default: cout << "Invalid choice!\n";
+        }
+    } while (choice != 2);
+
+    return 0;
+}
+
+
